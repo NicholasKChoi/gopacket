@@ -53,7 +53,7 @@ func (p *Handle) setNonBlocking() error {
 
 	// Change the device to non-blocking, we'll use pcap_wait to wait until the
 	// handle is ready to read.
-	if v := C.pcap_setnonblock(p.cptr, 1, buf); v == -1 {
+	if v := C.pcap_setnonblock(p.Cptr, 1, buf); v == -1 {
 		return errors.New(C.GoString(buf))
 	}
 
@@ -68,7 +68,7 @@ func (p *Handle) waitForPacket() {
 	usec := timeoutMillis(p.timeout) * 1000
 	usec -= 100
 
-	C.pcap_wait(p.cptr, usec)
+	C.pcap_wait(p.Cptr, usec)
 }
 
 // openOfflineFile returns contents of input file as a *Handle.
@@ -79,9 +79,9 @@ func openOfflineFile(file *os.File) (handle *Handle, err error) {
 	defer C.free(unsafe.Pointer(cmode))
 	cf := C.fdopen(C.int(file.Fd()), cmode)
 
-	cptr := C.pcap_fopen_offline(cf, buf)
-	if cptr == nil {
+	Cptr := C.pcap_fopen_offline(cf, buf)
+	if Cptr == nil {
 		return nil, errors.New(C.GoString(buf))
 	}
-	return &Handle{cptr: cptr}, nil
+	return &Handle{Cptr: Cptr}, nil
 }

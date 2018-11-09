@@ -36,9 +36,9 @@ func openOfflineFile(file *os.File) (handle *Handle, err error) {
 	defer C.free(unsafe.Pointer(buf))
 	cf := C.intptr_t(file.Fd())
 
-	cptr := C.pcap_hopen_offline(cf, buf)
-	if cptr == nil {
+	Cptr := C.pcap_hopen_offline(cf, buf)
+	if Cptr == nil {
 		return nil, errors.New(C.GoString(buf))
 	}
-	return &Handle{cptr: cptr}, nil
+	return &Handle{Cptr: Cptr}, nil
 }

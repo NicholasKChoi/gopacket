@@ -158,8 +158,8 @@ type Handle struct {
 	// getNextBufPtrLocked to stop trying to read packets
 	// This must be the first entry to ensure alignment for sync.atomic
 	stop uint64
-	// cptr is the handle for the actual pcap C object.
-	cptr        *C.pcap_t
+	// Cptr is the handle for the actual pcap C object.
+	Cptr        *C.pcap_t
 	timeout     time.Duration
 	device      string
 	deviceIndex int
@@ -264,8 +264,8 @@ func OpenLive(device string, snaplen int32, promisc bool, timeout time.Duration)
 	dev := C.CString(device)
 	defer C.free(unsafe.Pointer(dev))
 
-	p.cptr = C.pcap_open_live(dev, C.int(snaplen), pro, timeoutMillis(timeout), buf)
-	if p.cptr == nil {
+	p.Cptr = C.pcap_open_live(dev, C.int(snaplen), pro, timeoutMillis(timeout), buf)
+	if p.Cptr == nil {
 		return nil, errors.New(C.GoString(buf))
 	}
 
@@ -274,7 +274,7 @@ func OpenLive(device string, snaplen int32, promisc bool, timeout time.Duration)
 	// handle that.
 	if p.timeout > 0 {
 		if err := p.setNonBlocking(); err != nil {
-			C.pcap_close(p.cptr)
+			C.pcap_close(p.Cptr)
 			return nil, err
 		}
 	}
@@ -289,11 +289,11 @@ func OpenOffline(file string) (handle *Handle, err error) {
 	cf := C.CString(file)
 	defer C.free(unsafe.Pointer(cf))
 
-	cptr := C.pcap_open_offline(cf, buf)
-	if cptr == nil {
+	Cptr := C.pcap_open_offline(cf, buf)
+	if Cptr == nil {
 		return nil, errors.New(C.GoString(buf))
 	}
-	h := &Handle{cptr: cptr}
+	h := &Handle{Cptr: Cptr}
 	return h, nil
 }
 
@@ -385,7 +385,7 @@ func (a activateError) Error() string {
 // getNextBufPtrLocked is shared code for ReadPacketData and
 // ZeroCopyReadPacketData.
 func (p *Handle) getNextBufPtrLocked(ci *gopacket.CaptureInfo) error {
-	if p.cptr == nil {
+	if p.Cptr == nil {
 		return io.EOF
 	}
 
@@ -401,7 +401,7 @@ func (p *Handle) getNextBufPtrLocked(ci *gopacket.CaptureInfo) error {
 
 	for atomic.LoadUint64(&p.stop) == 0 {
 		// try to read a packet if one is immediately available
-		result := NextError(C.pcap_next_ex_escaping(p.cptr, pp, bp))
+		result := NextError(C.pcap_next_ex_escaping(p.Cptr, pp, bp))
 
 		switch result {
 		case NextErrorOk:
@@ -472,7 +472,7 @@ func (p *Handle) Close() {
 	p.closeMu.Lock()
 	defer p.closeMu.Unlock()
 
-	if p.cptr == nil {
+	if p.Cptr == nil {
 		return
 	}
 
@@ -482,19 +482,19 @@ func (p *Handle) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	C.pcap_close(p.cptr)
-	p.cptr = nil
+	C.pcap_close(p.Cptr)
+	p.Cptr = nil
 }
 
 // Error returns the current error associated with a pcap handle (pcap_geterr).
 func (p *Handle) Error() error {
-	return errors.New(C.GoString(C.pcap_geterr(p.cptr)))
+	return errors.New(C.GoString(C.pcap_geterr(p.Cptr)))
 }
 
 // Stats returns statistics on the underlying pcap handle.
 func (p *Handle) Stats() (stat *Stats, err error) {
 	var cstats _Ctype_struct_pcap_stat
-	if -1 == C.pcap_stats(p.cptr, &cstats) {
+	if -1 == C.pcap_stats(p.Cptr, &cstats) {
 		return nil, p.Error()
 	}
 	return &Stats{
@@ -508,7 +508,7 @@ func (p *Handle) Stats() (stat *Stats, err error) {
 func (p *Handle) ListDataLinks() (datalinks []Datalink, err error) {
 	var dltbuf *C.int
 
-	n := int(C.pcap_list_datalinks(p.cptr, &dltbuf))
+	n := int(C.pcap_list_datalinks(p.Cptr, &dltbuf))
 	if -1 == n {
 		return nil, p.Error()
 	}
@@ -567,7 +567,7 @@ func (p *Handle) compileBPFFilter(expr string) (_Ctype_struct_bpf_program, error
 
 	pcapCompileMu.Lock()
 	defer pcapCompileMu.Unlock()
-	if -1 == C.pcap_compile(p.cptr, &bpf, cexpr, 1, C.bpf_u_int32(maskp)) {
+	if -1 == C.pcap_compile(p.Cptr, &bpf, cexpr, 1, C.bpf_u_int32(maskp)) {
 		return bpf, p.Error()
 	}
 
@@ -576,12 +576,12 @@ func (p *Handle) compileBPFFilter(expr string) (_Ctype_struct_bpf_program, error
 
 // CompileBPFFilter compiles and returns a BPF filter with given a link type and capture length.
 func CompileBPFFilter(linkType layers.LinkType, captureLength int, expr string) ([]BPFInstruction, error) {
-	cptr := C.pcap_open_dead(C.int(linkType), C.int(captureLength))
-	if cptr == nil {
+	Cptr := C.pcap_open_dead(C.int(linkType), C.int(captureLength))
+	if Cptr == nil {
 		return nil, errors.New("error opening dead capture")
 	}
 
-	h := Handle{cptr: cptr}
+	h := Handle{Cptr: Cptr}
 	defer h.Close()
 	return h.CompileBPFFilter(expr)
 }
@@ -615,7 +615,7 @@ func (p *Handle) SetBPFFilter(expr string) (err error) {
 		return err
 	}
 
-	if -1 == C.pcap_setfilter(p.cptr, &bpf) {
+	if -1 == C.pcap_setfilter(p.Cptr, &bpf) {
 		return p.Error()
 	}
 
@@ -657,7 +657,7 @@ func (p *Handle) SetBPFInstructionFilter(bpfInstructions []BPFInstruction) (err 
 		return err
 	}
 
-	if -1 == C.pcap_setfilter(p.cptr, &bpf) {
+	if -1 == C.pcap_setfilter(p.Cptr, &bpf) {
 		C.pcap_freecode(&bpf)
 		return p.Error()
 	}
@@ -695,7 +695,7 @@ func (p *Handle) NewBPF(expr string) (*BPF, error) {
 
 	pcapCompileMu.Lock()
 	defer pcapCompileMu.Unlock()
-	if C.pcap_compile(p.cptr, &bpf.bpf, cexpr /* optimize */, 1, C.PCAP_NETMASK_UNKNOWN) != 0 {
+	if C.pcap_compile(p.Cptr, &bpf.bpf, cexpr /* optimize */, 1, C.PCAP_NETMASK_UNKNOWN) != 0 {
 		return nil, p.Error()
 	}
 
@@ -715,12 +715,12 @@ func (p *Handle) NewBPF(expr string) (*BPF, error) {
 //     doSomething()
 // }
 func NewBPF(linkType layers.LinkType, captureLength int, expr string) (*BPF, error) {
-	cptr := C.pcap_open_dead(C.int(linkType), C.int(captureLength))
-	if cptr == nil {
+	Cptr := C.pcap_open_dead(C.int(linkType), C.int(captureLength))
+	if Cptr == nil {
 		return nil, errors.New("error opening dead capture")
 	}
 
-	h := Handle{cptr: cptr}
+	h := Handle{Cptr: Cptr}
 	defer h.Close()
 	return h.NewBPF(expr)
 }
@@ -770,12 +770,12 @@ func Version() string {
 
 // LinkType returns pcap_datalink, as a layers.LinkType.
 func (p *Handle) LinkType() layers.LinkType {
-	return layers.LinkType(C.pcap_datalink(p.cptr))
+	return layers.LinkType(C.pcap_datalink(p.Cptr))
 }
 
 // SetLinkType calls pcap_set_datalink on the pcap handle.
 func (p *Handle) SetLinkType(dlt layers.LinkType) error {
-	if -1 == C.pcap_set_datalink(p.cptr, C.int(dlt)) {
+	if -1 == C.pcap_set_datalink(p.Cptr, C.int(dlt)) {
 		return p.Error()
 	}
 	return nil
@@ -793,9 +793,9 @@ func DatalinkValToDescription(dlt int) string {
 
 // DatalinkNameToVal returns pcap_datalink_name_to_val as int
 func DatalinkNameToVal(name string) C.int {
-	cptr := C.CString(name)
-	defer C.free(unsafe.Pointer(cptr))
-	return C.int(C.pcap_datalink_name_to_val(cptr))
+	Cptr := C.CString(name)
+	defer C.free(unsafe.Pointer(Cptr))
+	return C.int(C.pcap_datalink_name_to_val(Cptr))
 }
 
 // FindAllDevs attempts to enumerate all interfaces on the current machine.
@@ -890,7 +890,7 @@ func sockaddrToIP(rsa *syscall.RawSockaddr) (IP []byte, err error) {
 
 // WritePacketData calls pcap_sendpacket, injecting the given data into the pcap handle.
 func (p *Handle) WritePacketData(data []byte) (err error) {
-	if -1 == C.pcap_sendpacket(p.cptr, (*C.u_char)(&data[0]), (C.int)(len(data))) {
+	if -1 == C.pcap_sendpacket(p.Cptr, (*C.u_char)(&data[0]), (C.int)(len(data))) {
 		err = p.Error()
 	}
 	return
@@ -911,7 +911,7 @@ func (p *Handle) SetDirection(direction Direction) error {
 	if direction != DirectionIn && direction != DirectionOut && direction != DirectionInOut {
 		return fmt.Errorf("Invalid direction: %v", direction)
 	}
-	if status := C.pcap_setdirection(p.cptr, (C.pcap_direction_t)(direction)); status < 0 {
+	if status := C.pcap_setdirection(p.Cptr, (C.pcap_direction_t)(direction)); status < 0 {
 		return statusError(status)
 	}
 	return nil
@@ -919,7 +919,7 @@ func (p *Handle) SetDirection(direction Direction) error {
 
 // SnapLen returns the snapshot length
 func (p *Handle) SnapLen() int {
-	len := C.pcap_snapshot(p.cptr)
+	len := C.pcap_snapshot(p.Cptr)
 	return int(len)
 }
 
@@ -950,8 +950,8 @@ func statusError(status C.int) error {
 // InactiveHandle allows you to call pre-pcap_activate functions on your pcap
 // handle to set it up just the way you'd like.
 type InactiveHandle struct {
-	// cptr is the handle for the actual pcap C object.
-	cptr        *C.pcap_t
+	// Cptr is the handle for the actual pcap C object.
+	Cptr        *C.pcap_t
 	device      string
 	deviceIndex int
 	timeout     time.Duration
@@ -962,13 +962,13 @@ var activateErrMsg error
 
 // Error returns the current error associated with a pcap handle (pcap_geterr).
 func (p *InactiveHandle) Error() error {
-	return errors.New(C.GoString(C.pcap_geterr(p.cptr)))
+	return errors.New(C.GoString(C.pcap_geterr(p.Cptr)))
 }
 
 // Activate activates the handle.  The current InactiveHandle becomes invalid
 // and all future function calls on it will fail.
 func (p *InactiveHandle) Activate() (*Handle, error) {
-	err := activateError(C.pcap_activate(p.cptr))
+	err := activateError(C.pcap_activate(p.Cptr))
 	if err != aeNoError {
 		if err == aeWarning {
 			activateErrMsg = p.Error()
@@ -976,20 +976,20 @@ func (p *InactiveHandle) Activate() (*Handle, error) {
 		return nil, err
 	}
 	h := &Handle{
-		cptr:        p.cptr,
+		Cptr:        p.Cptr,
 		timeout:     p.timeout,
 		device:      p.device,
 		deviceIndex: p.deviceIndex,
 	}
-	p.cptr = nil
+	p.Cptr = nil
 	return h, nil
 }
 
 // CleanUp cleans up any stuff left over from a successful or failed building
 // of a handle.
 func (p *InactiveHandle) CleanUp() {
-	if p.cptr != nil {
-		C.pcap_close(p.cptr)
+	if p.Cptr != nil {
+		C.pcap_close(p.Cptr)
 	}
 }
 
@@ -1012,16 +1012,16 @@ func NewInactiveHandle(device string) (*InactiveHandle, error) {
 	}
 
 	// This copies a bunch of the pcap_open_live implementation from pcap.c:
-	cptr := C.pcap_create(dev, buf)
-	if cptr == nil {
+	Cptr := C.pcap_create(dev, buf)
+	if Cptr == nil {
 		return nil, errors.New(C.GoString(buf))
 	}
-	return &InactiveHandle{cptr: cptr, device: device, deviceIndex: deviceIndex}, nil
+	return &InactiveHandle{Cptr: Cptr, device: device, deviceIndex: deviceIndex}, nil
 }
 
 // SetSnapLen sets the snap length (max bytes per packet to capture).
 func (p *InactiveHandle) SetSnapLen(snaplen int) error {
-	if status := C.pcap_set_snaplen(p.cptr, C.int(snaplen)); status < 0 {
+	if status := C.pcap_set_snaplen(p.Cptr, C.int(snaplen)); status < 0 {
 		return statusError(status)
 	}
 	return nil
@@ -1034,7 +1034,7 @@ func (p *InactiveHandle) SetPromisc(promisc bool) error {
 	if promisc {
 		pro = 1
 	}
-	if status := C.pcap_set_promisc(p.cptr, pro); status < 0 {
+	if status := C.pcap_set_promisc(p.Cptr, pro); status < 0 {
 		return statusError(status)
 	}
 	return nil
@@ -1044,7 +1044,7 @@ func (p *InactiveHandle) SetPromisc(promisc bool) error {
 //
 // See the package documentation for important details regarding 'timeout'.
 func (p *InactiveHandle) SetTimeout(timeout time.Duration) error {
-	if status := C.pcap_set_timeout(p.cptr, timeoutMillis(timeout)); status < 0 {
+	if status := C.pcap_set_timeout(p.Cptr, timeoutMillis(timeout)); status < 0 {
 		return statusError(status)
 	}
 	p.timeout = timeout
@@ -1055,7 +1055,7 @@ func (p *InactiveHandle) SetTimeout(timeout time.Duration) error {
 // handle.
 func (p *InactiveHandle) SupportedTimestamps() (out []TimestampSource) {
 	var types *C.int
-	n := int(C.pcap_list_tstamp_types(p.cptr, &types))
+	n := int(C.pcap_list_tstamp_types(p.Cptr, &types))
 	defer C.pcap_free_tstamp_types(types)
 	typesArray := (*[100]C.int)(unsafe.Pointer(types))
 	for i := 0; i < n; i++ {
@@ -1067,7 +1067,7 @@ func (p *InactiveHandle) SupportedTimestamps() (out []TimestampSource) {
 // SetTimestampSource sets the type of timestamp generator PCAP uses when
 // attaching timestamps to packets.
 func (p *InactiveHandle) SetTimestampSource(t TimestampSource) error {
-	if status := C.pcap_set_tstamp_type(p.cptr, C.int(t)); status < 0 {
+	if status := C.pcap_set_tstamp_type(p.Cptr, C.int(t)); status < 0 {
 		return statusError(status)
 	}
 	return nil
@@ -1085,7 +1085,7 @@ func (p *InactiveHandle) SetRFMon(monitor bool) error {
 	if monitor {
 		mon = 1
 	}
-	switch canset := C.pcap_can_set_rfmon(p.cptr); canset {
+	switch canset := C.pcap_can_set_rfmon(p.Cptr); canset {
 	case 0:
 		return CannotSetRFMon
 	case 1:
@@ -1093,7 +1093,7 @@ func (p *InactiveHandle) SetRFMon(monitor bool) error {
 	default:
 		return statusError(canset)
 	}
-	if status := C.pcap_set_rfmon(p.cptr, mon); status != 0 {
+	if status := C.pcap_set_rfmon(p.Cptr, mon); status != 0 {
 		return statusError(status)
 	}
 	return nil
@@ -1101,7 +1101,7 @@ func (p *InactiveHandle) SetRFMon(monitor bool) error {
 
 // SetBufferSize sets the buffer size (in bytes) of the handle.
 func (p *InactiveHandle) SetBufferSize(bufferSize int) error {
-	if status := C.pcap_set_buffer_size(p.cptr, C.int(bufferSize)); status < 0 {
+	if status := C.pcap_set_buffer_size(p.Cptr, C.int(bufferSize)); status < 0 {
 		return statusError(status)
 	}
 	return nil
@@ -1115,7 +1115,7 @@ func (p *InactiveHandle) SetImmediateMode(mode bool) error {
 	if mode {
 		md = 1
 	}
-	if status := C.pcap_set_immediate_mode(p.cptr, md); status < 0 {
+	if status := C.pcap_set_immediate_mode(p.Cptr, md); status < 0 {
 		return statusError(status)
 	}
 	return nil
